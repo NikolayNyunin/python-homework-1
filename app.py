@@ -1,3 +1,4 @@
+from config import API_KEY
 from api import get_current_temperature
 from stats import calculate_rolling_average, calculate_stats, detect_anomalies, get_current_season
 
@@ -6,6 +7,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 import asyncio
+
+# Ручное отключение false positive предупреждения
+pd.options.mode.chained_assignment = None
 
 
 async def main() -> None:
@@ -33,18 +37,22 @@ async def main() -> None:
 
     with col1:
         data_file = st.file_uploader('Файл с историческими данными:', 'csv')
-        if data_file is not None:
-            data = pd.read_csv(data_file)
+
+    if data_file is not None:
+        data = pd.read_csv(data_file)
+        try:
             cities = sorted(data['city'].unique())
-            with col2:
-                city = st.selectbox('Город для анализа:', cities, None)
-        else:
-            data = None
-            with col2:
-                city = st.selectbox('Город для анализа:', None, None)
+        except KeyError as e:
+            st.error(f'Неверный формат файла: отсутствует колонка {e}')
+            cities = None
+    else:
+        data, cities = None, None
+
+    with col2:
+        city = st.selectbox('Город для анализа:', cities, None)
 
     with col3:
-        api_key = st.text_input('Ключ для OpenWeatherMap API:', None)
+        api_key = st.text_input('Ключ для OpenWeatherMap API:', API_KEY)
 
     analyze_button = st.button('Проанализировать температуру')
     st.divider()
@@ -65,41 +73,47 @@ async def analyze_temperature(data: pd.DataFrame, city: str, api_key: str) -> No
         st.error('Ключ для API не введён')
         return
 
-    status_code, temperature = await get_current_temperature(city, api_key)
+    status_code, result = await get_current_temperature(city, api_key)
     if status_code != 0:
-        st.error('Ошибка получения текущей температуры')
+        st.error(f'Ошибка получения текущей температуры: {result}')
         return
-
-    city_data = data[data['city'] == city]
-    city_data['timestamp'] = pd.to_datetime(city_data['timestamp'])
-    city_data['avg_temperature'] = calculate_rolling_average(city_data)
-    city_stats = calculate_stats(city_data)
-    city_data['is_anomaly'] = detect_anomalies(city_data, city_stats)
-
-    st.write(f'## Текущая температура: ${temperature}°C$')
-    current_season = get_current_season()
-    mean, std = city_stats[current_season]['mean'], city_stats[current_season]['std']
-    min_temp, max_temp = mean - 2 * std, mean + 2 * std
-    if min_temp <= temperature <= max_temp:
-        st.write(f'### :green-background[Температура в пределах нормального диапазона ({min_temp:.2f} ... {max_temp:.2f})]')
     else:
-        st.write(f'### :red-background[Температура за пределами нормального диапазона ({min_temp:.2f} ... {max_temp:.2f})]')
+        temperature = result
 
-    st.write('## Исторические данные:')
+    try:
+        city_data = data[data['city'] == city]
+        city_data['timestamp'] = pd.to_datetime(city_data['timestamp'])
+        city_data['avg_temperature'] = calculate_rolling_average(city_data)
+        city_stats = calculate_stats(city_data)
+        city_data['is_anomaly'] = detect_anomalies(city_data, city_stats)
 
-    st.write('### Статистики по сезонам:')
-    city_stats_data = pd.DataFrame(city_stats)
-    st.columns(3)[1].table(city_stats_data)
+        st.write(f'## Текущая температура: ${temperature}°C$')
+        current_season = get_current_season()
+        mean, std = city_stats[current_season]['mean'], city_stats[current_season]['std']
+        min_temp, max_temp = mean - 2 * std, mean + 2 * std
+        if min_temp <= temperature <= max_temp:
+            st.write(f'### :green-background[Температура в пределах нормального диапазона ({min_temp:.2f} ... {max_temp:.2f})]')
+        else:
+            st.write(f'### :red-background[Температура за пределами нормального диапазона ({min_temp:.2f} ... {max_temp:.2f})]')
 
-    st.write('### График истории температур:')
-    not_anomalies = city_data[city_data['is_anomaly'] == False]
-    anomalies = city_data[city_data['is_anomaly'] == True]
-    fig, ax = plt.subplots(figsize=(12, 3))
-    ax.scatter(not_anomalies['timestamp'], not_anomalies['temperature'], s=5, c='blue')
-    ax.scatter(anomalies['timestamp'], anomalies['temperature'], s=5, c='red')
-    ax.plot(city_data['timestamp'], city_data['avg_temperature'], c='lime', linewidth=2)
-    st.pyplot(fig)
-    st.write('(:blue[синий] - нормальные температуры, :red[красный] - аномалии, :green[зелёный] - скользящее среднее)')
+        st.write('## Исторические данные:')
+
+        st.write('### Статистики по сезонам:')
+        city_stats_data = pd.DataFrame(city_stats)
+        st.columns(3)[1].table(city_stats_data)
+
+        st.write('### График истории температур:')
+        not_anomalies = city_data[city_data['is_anomaly'] == False]
+        anomalies = city_data[city_data['is_anomaly'] == True]
+        fig, ax = plt.subplots(figsize=(12, 3))
+        ax.scatter(not_anomalies['timestamp'], not_anomalies['temperature'], s=5, c='blue')
+        ax.scatter(anomalies['timestamp'], anomalies['temperature'], s=5, c='red')
+        ax.plot(city_data['timestamp'], city_data['avg_temperature'], c='lime', linewidth=2)
+        st.pyplot(fig)
+        st.write('(:blue[синий] - нормальные температуры, :red[красный] - аномалии, :green[зелёный] - скользящее среднее)')
+
+    except Exception as e:
+        st.error(f'Ошибка при обработке данных: {e}')
 
 
 if __name__ == '__main__':
