@@ -3,10 +3,16 @@ import pandas as pd
 from datetime import date
 
 
-def calculate_rolling_average(data: pd.DataFrame) -> pd.Series:
+def calculate_rolling_mean(data: pd.DataFrame) -> pd.Series:
     """Вычисление скользящего среднего для одного города."""
 
     return data['temperature'].rolling(window=30).mean()
+
+
+def calculate_rolling_std(data: pd.DataFrame) -> pd.Series:
+    """Вычисление скользящего стандартного отклонения для одного города."""
+
+    return data['temperature'].rolling(window=30).std()
 
 
 def calculate_stats(data: pd.DataFrame) -> dict:
@@ -21,18 +27,17 @@ def calculate_stats(data: pd.DataFrame) -> dict:
     return stats
 
 
-def is_anomaly_row(row: pd.Series, stats: dict) -> bool:
+def is_anomaly(row: pd.Series) -> bool:
     """Проверка строки на аномальность."""
 
-    mean = stats[row['season']]['mean']
-    std = stats[row['season']]['std']
-    return row['temperature'] < mean - 2 * std or row['temperature'] > mean + 2 * std
+    return (row['temperature'] < row['rolling_mean'] - 2 * row['rolling_std']
+            or row['temperature'] > row['rolling_mean'] + 2 * row['rolling_std'])
 
 
-def detect_anomalies(data: pd.DataFrame, stats: dict) -> pd.Series:
+def detect_anomalies(data: pd.DataFrame) -> pd.Series:
     """Поиск аномалий в температурных данных для одного города."""
 
-    return data.apply(lambda row: is_anomaly_row(row, stats), axis=1)
+    return data.apply(is_anomaly, axis=1)
 
 
 def get_current_season() -> str:

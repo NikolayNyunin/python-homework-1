@@ -1,6 +1,6 @@
 from config import API_KEY
 from api import get_current_temperature
-from stats import calculate_rolling_average, calculate_stats, detect_anomalies, get_current_season
+from stats import calculate_rolling_mean, calculate_rolling_std, calculate_stats, detect_anomalies, get_current_season
 
 import streamlit as st
 import pandas as pd
@@ -83,9 +83,10 @@ async def analyze_temperature(data: pd.DataFrame, city: str, api_key: str) -> No
     try:
         city_data = data[data['city'] == city]
         city_data['timestamp'] = pd.to_datetime(city_data['timestamp'])
-        city_data['avg_temperature'] = calculate_rolling_average(city_data)
+        city_data['rolling_mean'] = calculate_rolling_mean(city_data)
+        city_data['rolling_std'] = calculate_rolling_std(city_data)
+        city_data['is_anomaly'] = detect_anomalies(city_data)
         city_stats = calculate_stats(city_data)
-        city_data['is_anomaly'] = detect_anomalies(city_data, city_stats)
 
         st.write(f'## Текущая температура: ${temperature}°C$')
         current_season = get_current_season()
@@ -108,7 +109,7 @@ async def analyze_temperature(data: pd.DataFrame, city: str, api_key: str) -> No
         fig, ax = plt.subplots(figsize=(12, 3))
         ax.scatter(not_anomalies['timestamp'], not_anomalies['temperature'], s=5, c='blue')
         ax.scatter(anomalies['timestamp'], anomalies['temperature'], s=5, c='red')
-        ax.plot(city_data['timestamp'], city_data['avg_temperature'], c='lime', linewidth=2)
+        ax.plot(city_data['timestamp'], city_data['rolling_mean'], c='lime', linewidth=2)
         st.pyplot(fig)
         st.write('(:blue[синий] - нормальные температуры, :red[красный] - аномалии, :green[зелёный] - скользящее среднее)')
 
